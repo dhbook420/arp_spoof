@@ -45,11 +45,10 @@ Ip::Ip(const std::string r) {
     unsigned int a, b, c, d;
     int res = sscanf(r.c_str(), "%u.%u.%u.%u", &a, &b, &c, &d);
     if (res != Size) {
-        fprintf(stderr, "Ip::Ip sscanf return %d r=%s\n", res, r.c_str());
-        return;
+        fprintf(stderr, "invalid Ip format %s\n", r.c_str());
+        exit(EXIT_FAILURE);
     }
     ip_ = (a << 24) | (b << 16) | (c << 8) | d;
-    valid = true;
 }
 
 Ip::operator std::string() const {
