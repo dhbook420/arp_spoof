@@ -80,6 +80,7 @@ int main(int argc, char *argv[]) {
             cout << "Failed to get mac addr\n";
             return false;
         }
+        //get target mac addr
         if (!send_arp_request(pcap, iface_mac, iface_ip,
             send_tar_ips[i].target, target_mac)) {
             cout << "Failed to get mac addr\n";
@@ -228,7 +229,7 @@ bool arp_relay(pcap_t* pcap, Mac attack_mac, Mac target_mac, Ip sender_ip, Ip ta
     packet.arp_.pro_ = htons(EthHdr::Ip4);
     packet.arp_.hln_ = Mac::Size;
     packet.arp_.pln_ = Ip::Size;
-    packet.arp_.op_ = htons(ArpHdr::Reply);
+    packet.arp_.op_ = htons(ArpHdr::Request);
     //sender
     packet.arp_.smac_ = Mac(string(attack_mac));
     packet.arp_.sip_ = htonl(sender_ip);
