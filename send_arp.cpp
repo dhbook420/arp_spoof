@@ -123,12 +123,13 @@ int main(int argc, char *argv[]) {
     }
 
     cout << "Press key to stop" << "\n";
-    char c = 0;
 
-    while (c == 0)
-        cin.get(c);
+    std::thread input_th([&]() {
+        char c;
+        std::cin.get(c);
+        running.store(false);
+    });
 
-    running.store(false);
     cout << "Ending process..." << endl;
     this_thread::sleep_for(chrono::seconds(2));
 
