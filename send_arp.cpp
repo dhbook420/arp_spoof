@@ -130,13 +130,17 @@ int main(int argc, char *argv[]) {
     }
 
     cout << "Press key to stop" << "\n";
-    getchar();
+    char c = 0;
+
+    while (c == 0)
+        cin.get(c);
+
     running.store(false);
     this_thread::sleep_for(chrono::seconds(10));
 
     for (auto& t : threads) t.join(); //exit thread
 
-
+    cout << "Ending process" << endl;
     //recover
     for (int i = 0; i < send_tar_macs.size(); i++) {
         //send normal packet
@@ -148,6 +152,7 @@ int main(int argc, char *argv[]) {
     }
 
     pcap_close(pcap);
+    cout << "Done" << endl;
     return EXIT_SUCCESS;
 }
 
@@ -290,7 +295,7 @@ bool arp_relay(pcap_t* pcap, Mac attack_mac, Mac sender_mac, Mac target_mac, Ip 
 
         if (eth_type == EthHdr::Arp) {
             EthArpPacket* arp_pkt = reinterpret_cast<EthArpPacket*>(buf);
-            //reply case 1 : sender -> taregt ARP request (if ARP table expired , who is target?)
+            //sender -> taregt ARP request
             if (ethhdr->dmac() == Mac::broadcastMac() && arp_pkt->arp_.op() == ArpHdr::Request
                 && arp_pkt->arp_.sip() == sender_ip && arp_pkt->arp_.tip() == target_ip)
             {
@@ -312,6 +317,7 @@ bool arp_relay(pcap_t* pcap, Mac attack_mac, Mac sender_mac, Mac target_mac, Ip 
                 {
                     lock_guard<mutex> lk(pcap_mutex);
                     int res = pcap_sendpacket(pcap, buf, len);
+                    cout << "sent" << '\n';
                     if (res != 0) {
                         fprintf(stderr, "pcap_sendpacket failed: %d (%s)\n", res, pcap_geterr(pcap));
                         delete[] buf;
