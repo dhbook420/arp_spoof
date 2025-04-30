@@ -115,8 +115,8 @@ int main(int argc, char *argv[]) {
         threads.push_back(thread([&, i](){
                 // sender→target capture
                 pcap_t* thread_pcap = pcap_open_live(interface.c_str(), 65536, 1, 1, errbuf);
-                while (running.load()) {arp_relay(thread_pcap, attacker_mac, flows[i].smac, flows[i].tmac,
-                flows[i].sip, flows[i].tip);}
+                arp_relay(thread_pcap, attacker_mac, flows[i].smac, flows[i].tmac,
+                flows[i].sip, flows[i].tip);
                 pcap_close(thread_pcap);
         }));
 
@@ -161,7 +161,7 @@ int main(int argc, char *argv[]) {
         //send normal packet
         for (int j = 0; j < 5; j ++) {
             if (!arp_infection(pcap, flows[i].smac, Mac::broadcastMac(),
-            flows[i].tip, flows[i].sip)) {
+            flows[i].sip, flows[i].tip)) {
                 cout << "Failed ARP infection\n";
                 return false;
             }
