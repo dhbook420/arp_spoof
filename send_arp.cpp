@@ -48,7 +48,7 @@ bool getMacIpAddr(string &iface_name, Mac& mac_addr, Ip& ip_addr);
 bool arp_infection(pcap_t* dev, Mac attack_mac, Mac sender_mac, Ip sender_ip, Ip target_ip);
 bool arp_relay(pcap_t* dev, Mac attack_mac, Mac sender_mac,Mac target_mac, Ip sender_ip, Ip target_ip);
 
-extern std::mutex pcap_mutex;
+mutex pcap_mutex;
 atomic<bool> running = true;
 
 int main(int argc, char *argv[]) {
