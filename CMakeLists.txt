@@ -12,6 +12,7 @@ add_executable(send-arp
         mac.h
         ip.h
         ethhdr.h
-        arphdr.h)
+        arphdr.h
+        iphdr.h)
 
 target_link_libraries(send-arp pcap)
