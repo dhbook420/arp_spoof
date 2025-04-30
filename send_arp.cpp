@@ -273,7 +273,6 @@ bool arp_relay(pcap_t* pcap, Mac attack_mac, Mac sender_mac, Mac target_mac, Ip 
 
     const uint8_t* recv_pkt;
     long long len = 0;
-    u_char* buf = nullptr;
 
     while (running) {
         {
@@ -296,26 +295,27 @@ bool arp_relay(pcap_t* pcap, Mac attack_mac, Mac sender_mac, Mac target_mac, Ip 
             {
                 if (!arp_infection(pcap, attack_mac, sender_mac, sender_ip, target_ip)) {
                     cout << "Failed ARP infection\n";
-                        delete[] buf;
                         return false;
                     }
             }
         }
         else if (ethhdr->type() == EthHdr::Ip4) {
+
             // IPv4 패킷 처리 (sender → target 만 relay)
             len = header->caplen;
-            buf = new u_char[len]; //동적 할당
-            memcpy(buf, recv_pkt, len);
+            auto buf = make_unique<u_char[]>(len); //동적 할당
+            memcpy(buf.get(), recv_pkt, len);
 
-            IpHdr* iphdr = reinterpret_cast<IpHdr*>(buf + sizeof(EthHdr));
+            EthHdr* eth = reinterpret_cast<EthHdr*>(buf.get());
+            IpHdr* iphdr = reinterpret_cast<IpHdr*>(buf.get() + sizeof(EthHdr));
             if ((iphdr->sip()) == sender_ip && iphdr->dip() == target_ip)
             {
-                ethhdr->smac_ = attack_mac;
-                ethhdr->dmac_ = target_mac;
+                eth->smac_ = attack_mac;
+                eth->dmac_ = target_mac;
 
                 {
                     lock_guard<mutex> lk(pcap_mutex);
-                    int res = pcap_sendpacket(pcap, buf, len);
+                    int res = pcap_sendpacket(pcap, buf.get(), len);
                     cout << "sent" << '\n';
                     if (res != 0) {
                         fprintf(stderr, "pcap_sendpacket failed: %d (%s)\n", res, pcap_geterr(pcap));
@@ -327,7 +327,6 @@ bool arp_relay(pcap_t* pcap, Mac attack_mac, Mac sender_mac, Mac target_mac, Ip 
 
             }
         }
-        delete[] buf;
     }
     return true;
 }
