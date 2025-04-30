@@ -1,9 +1,9 @@
-
-#ifndef IPHDR_H
-#define IPHDR_H
+#pragma once
 
 #include <netinet/in.h>
 #include "ip.h"
+
+#pragma pack(push, 1)
 
 struct IpHdr final {
     uint8_t version_and_ihl;
@@ -37,4 +37,6 @@ struct IpHdr final {
     };
 };
 
-#endif //IPHDR_H
+#pragma pack(pop)
+
+

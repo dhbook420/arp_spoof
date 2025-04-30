@@ -92,7 +92,7 @@ int main(int argc, char *argv[]) {
             }
 	
         flows.push_back(sender_target_flow{sender_ip, target_ip, sender_mac, target_mac});
-        cout << string(flows[i].smac) << ", " << string(flows[i].tmac) << endl;
+        cout << string(flows[(i-2)/2].smac) << ", " << string(flows[(i - 2) / 2].tmac) << endl;
     }
 
     //cout << string(flows[0].sender) << endl;
@@ -211,7 +211,6 @@ bool send_arp_request(pcap_t* pcap, Mac my_mac, Ip my_ip, Ip target_ip, Mac& tar
     EthArpPacket pkt;
 
     while (true) {
-	
         res_recv = pcap_next_ex(pcap, &header, &recv_pkt);
         if (res_recv == 0) continue;
 	    if (res_recv == PCAP_ERROR || res_recv == PCAP_ERROR_BREAK) {
