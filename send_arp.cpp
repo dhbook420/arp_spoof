@@ -128,7 +128,7 @@ int main(int argc, char *argv[]) {
                     cout << "Failed ARP infection\n";
                     return false;
                     }
-                this_thread::sleep_for(chrono::milliseconds(10));
+                this_thread::sleep_for(chrono::seconds(10));
                     }
 
         }));
@@ -160,7 +160,7 @@ int main(int argc, char *argv[]) {
     for (int i = 0; i < flows.size(); i++) {
         //send normal packet
         for (int j = 0; j < 5; j ++) {
-            if (!arp_infection(pcap, flows[i].tmac, Mac::broadcastMac(),
+            if (!arp_infection(pcap, flows[i].smac, Mac::broadcastMac(),
             flows[i].tip, flows[i].sip)) {
                 cout << "Failed ARP infection\n";
                 return false;
