@@ -130,9 +130,12 @@ int main(int argc, char *argv[]) {
         running.store(false);
     });
 
+
+
+    input_th.join();
+
     cout << "Ending process..." << endl;
     this_thread::sleep_for(chrono::seconds(2));
-
 
     for (auto& t : threads) t.join(); //exit thread
 
